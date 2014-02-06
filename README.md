@@ -21,8 +21,8 @@ Installation
 --------------
 
 ```sh
-go get github.com/RaviKumarYadav/Assignment2
-cd .../github.com/RaviKumarYadav/Assignment2
+go get github.com/RaviKumarYadav/Raft/cluster
+cd .../github.com/RaviKumarYadav/Raft/cluster
 go test
 
 ```
@@ -38,6 +38,7 @@ To run individually just pass "ServerId" as command line argument eg :- go run m
 License
 ----
 
-IITB
+[IITB]
 
 [zmq]:http://zeromq.org/
+[IITB]:http://www.cse.iitb.ac.in/
