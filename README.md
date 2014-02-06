@@ -5,7 +5,7 @@ cluster.go
 ----------
 
 cluster.go is the source file which is used to generate cluster.a library file.
-There are many methods defined in this library which internally implement [zmq].
+There are many methods defined in this library which internally implements [zmq].
 
 Few methods are described below :- 
 
