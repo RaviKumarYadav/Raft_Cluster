@@ -1,5 +1,5 @@
-Assignment2
-===========
+Raft
+=====
 
 cluster.go
 ----------
