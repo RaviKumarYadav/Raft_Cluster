@@ -35,6 +35,32 @@ Check the configFile as it should be present with same folder of the cluster_tes
 ```
 To run individually just pass "ServerId" as command line argument eg :- go run mainFile.go 1 , where "1" is the ServerId whose other details are present in configFile which will be fetched by the program.
 
+
+Test Cases
+-----------
+
+There are few cases present in file "Raft/cluster/cluster_test.go". It tests for following :-
+
+* Unicast
+    * Peer-Peer messages sent by one server to another (by each server in cluster)
+* Multicast
+    * Messages sent by each server is listened by each member(server) in the  cluster
+* Unicast and Multicast
+    * Mix of Unicast and Multicast messages were sent by each server
+* Cyclic Unicast
+    * Each server sent messages to another server which next to it (in terms of ServerId)
+
+
+How to Run Test Cases
+-----------------------
+
+```sh
+cd github.com\RaviKumarYadav\Raft\cluster
+go test
+```
+
+
+
 License
 ----
 
