@@ -55,7 +55,7 @@ How to Run Test Cases
 -----------------------
 
 ```sh
-cd github.com\RaviKumarYadav\Raft\cluster
+cd github.com/RaviKumarYadav/Raft/cluster
 go test
 ```
 
