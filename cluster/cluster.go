@@ -99,44 +99,6 @@ type Server struct {
 	outbox chan *Envelope
 }
 
-/*
-// Send Functionality-----------------------------
-sender_array[id] , _ = zmq.NewSocket(zmq.PUSH)
-sender_array[id].Connect("tcp://localhost:"+ fmt.Sprintf("%d",value.Port_Num))
-
-mutex.Lock()
-//sender_array[id].Send("Hi " + fmt.Sprintf("%d",jsontype.Object.Server[id].Server_Id),0)
-sender_array[id].Send("Hi from Server " + fmt.Sprintf("%d",self_server_Id),0)		
-id = id + 1
-fmt.Println("Sent Hi to " + fmt.Sprintf("%d",value.Server_Id))
-mutex.Unlock()
-// ----------------------------------------------
-
-
-sId,_ := strconv.Atoi(os.Args[1])
-self_server_Id := jsontype.Object.Server[index].Server_Id
-fmt.Println(self_server_Id)
-
-for _ , value := range jsontype.Object.Server {
-	if self_server_Id != value.Server_Id {
-		fmt.Println("\n "+fmt.Sprintf("%d",self_server_Id) + "  " + fmt.Sprintf("%d",value.Server_Id) + "...\n")
-		sender_array[id] , _ = zmq.NewSocket(zmq.PUSH)
-		sender_array[id].Connect("tcp://localhost:"+ fmt.Sprintf("%d",value.Port_Num))
-
-		mutex.Lock()
-		//sender_array[id].Send("Hi " + fmt.Sprintf("%d",jsontype.Object.Server[id].Server_Id),0)
-		sender_array[id].Send("Hi from Server " + fmt.Sprintf("%d",self_server_Id),0)		
-		id = id + 1
-		fmt.Println("Sent Hi to " + fmt.Sprintf("%d",value.Server_Id))
-		mutex.Unlock()
-		}
-}
-
-
-}
-
-*/
-
 func NewServer(myId int, configFile string) Server {
 
 	file, e := ioutil.ReadFile("./" + configFile)
@@ -183,11 +145,7 @@ func NewServer(myId int, configFile string) Server {
 
 func SendMessage(server Server) {
 
-	fmt.Printf("\n Going To Send Messages for Server " + strconv.Itoa(server.serverID) + "\n")
-
-	//var sender_array [2]*zmq.Socket
-	//sender_array := make([]*zmq.Socket,2)
-	//id := 0
+	//fmt.Printf("\n Going To Send Messages for Server " + strconv.Itoa(server.serverID) + "\n")
 
 	sendSocket := make([]*zmq.Socket, len(server.peerAddress))
 	sIdToSocketIndexMap := make(map[int]int)
@@ -229,159 +187,19 @@ func SendMessage(server Server) {
 
 func ReceiveMessage(server Server) {
 
-	fmt.Printf("\n Going To Receive Messages for Server " + strconv.Itoa(server.serverID) + "\n")
-
-	/*
-		sIdToIndex := make(map[int]int)
-		for index , sId := range server.peers {
-			sIdToIndex[sId] = index
-		}
-	*/
+	//fmt.Printf("\n Going To Receive Messages for Server " + strconv.Itoa(server.serverID) + "\n")
 
 	receiver, _ := zmq.NewSocket(zmq.PULL)
 	//defer receiver.Close()
 	receiver.Bind(server.serverAddress)
 
 	for {
-		//fmt.Println("\nbefore received")
 		msg, _ := receiver.Recv(0)
-		//fmt.Println("\nafter received")
 		splittedStr := strings.Split(msg, "::")
 		pId, _ := strconv.Atoi(splittedStr[0])
 		msgId, _ := strconv.Atoi(splittedStr[1])
-		//fmt.Println("\nreceived")
-		// If Message/Envelope was intended to it only or Message was broadcasted
-		//if pId == server.serverID ||  pId == -1 {
-		//if pId == server.Pid() ||  pId == -1 {
 		server.Inbox() <- &Envelope{Pid: pId, MsgId: int64(msgId), Msg: splittedStr[2]}
-		//}
-
-		/*	_ , ok := sIdToIndex[pId]
-			fmt.Println("Received " + strconv.Itoa(pId) )
-			if ok == true {
-				server.Inbox() <- &Envelope{Pid:pId , MsgId:int64(msgId) , Msg:splittedStr[2]}
-			}
-		*/
 	}
 
 	//time.Sleep(time.Second*5)
 }
-
-//fmt.Printf("%s\n", string(file))
-
-//var jsontype jsonobject
-//json.Unmarshal(file, &jsontype)
-//fmt.Printf("Results: %v\n", jsontype)
-
-//index,_ := strconv.Atoi(os.Args[1])
-//self_server_Id := jsontype.Object.Server[index].Server_Id
-//fmt.Println(self_server_Id)
-
-//CreateServer(self_server_Id,jsontype,index)
-// Infinite Loop
-//for {
-//fmt.Println("/n Server Id %d",self_server_Id)
-//time.Sleep(time.Second*10)
-//}
-
-//}
-
-/*
-
-func CreateServer(self_server_Id int , jsontype jsonobject , index int){
-// Receiving Port ()
-// zmq.PULL is implemented
-go func(){
-fmt.Printf("In PULL \n")
-receiver, _ := zmq.NewSocket(zmq.PULL)
-//defer receiver.Close()
-receiver.Bind("tcp://*:"+ fmt.Sprintf("%d",jsontype.Object.Server[index].Port_Num))
-fmt.Println("Self Port--> "+ fmt.Sprintf("%d",jsontype.Object.Server[index].Port_Num))
-for {
-msg , _  := receiver.Recv(0)
-fmt.Printf("\nReceived Message "+msg)
-//fmt.Printf("\nReceived Message ")
-}
-//time.Sleep(time.Second*5)
-}()
-
-
-// Sending Port ()
-// zmq.PUSH is implemented
-go func(){
-fmt.Printf("In PUSH \n")
-
-//var sender_array [2]*zmq.Socket
-sender_array := make([]*zmq.Socket,2)
-id := 0
-
-	for _ , value := range jsontype.Object.Server {
-		//fmt.Println("\n "+fmt.Sprintf("%d",self_server_Id) + "  " + fmt.Sprintf("%d",value.Server_Id))
-		if self_server_Id != value.Server_Id {
-		fmt.Println("\n "+fmt.Sprintf("%d",self_server_Id) + "  " + fmt.Sprintf("%d",value.Server_Id) + "...\n")
-		sender_array[id] , _ = zmq.NewSocket(zmq.PUSH)
-		sender_array[id].Connect("tcp://localhost:"+ fmt.Sprintf("%d",value.Port_Num))
-
-		mutex.Lock()
-		//sender_array[id].Send("Hi " + fmt.Sprintf("%d",jsontype.Object.Server[id].Server_Id),0)
-		sender_array[id].Send("Hi from Server " + fmt.Sprintf("%d",self_server_Id),0)		
-		id = id + 1
-		fmt.Println("Sent Hi to " + fmt.Sprintf("%d",value.Server_Id))
-		mutex.Unlock()
-		}
-		}
-
-time.Sleep(time.Second*9)
-}()
-}
-
-*/
-
-/*
-sender, _ := zmq.NewSocket(zmq.PUSH)
-defer sender.Close()
-sender.Connect("tcp://localhost:1000")
-
-receiver, _ := zmq.NewSocket(zmq.PULL)
-defer receiver.Close()
-receiver.Bind("tcp://*:2000")
-
-
-//fmt.Print("\n Server A , Press Enter when the workers are ready: ")
-
-//Only for User Interrupt
-var line string
-fmt.Scanln(&line)
-
-
-count := 0
-i:="fdsfsfs"
-go func () { msg , _ := receiver.Recv(0)
-fmt.Println("Received from Server A %s\n",msg)
-}()
-sender.Send(i, 0)
-fmt.Println(i)
-
-
-fmt.Printf("Total Sent - %d \n", count)
-time.Sleep(time.Second*10)
-*/
-
-/*
-j := 0
-
-	for i := 1 ; i < 10 ; i ++ {
-		//if self_server_Id != value.Server_Id {
-		fmt.Printf("\nSending Message 'Hi' ")
-		sender_array[j].Send("Hi " + string(i),zmq.DONTWAIT)
-
-		if j == (server_count-2) {
-			j = 0
-		} else {
-			j = j+1
-		}
-		//
-		}
-	}
-}()
-*/
