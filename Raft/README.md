@@ -47,8 +47,8 @@ go test
 License
 ----
 
-IIT Bombay
+[IIT Bombay]
 
-[IITB]:http://www.cse.iitb.ac.in/
+[IIT Bombay]:http://www.cse.iitb.ac.in/
 
     
