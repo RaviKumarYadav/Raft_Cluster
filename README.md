@@ -64,7 +64,7 @@ go test
 License
 ----
 
-[IITB]
+[IIT Bombay]
 
 [zmq]:http://zeromq.org/
-[IITB]:http://www.cse.iitb.ac.in/
+[IIT Bombay]:http://www.cse.iitb.ac.in/
