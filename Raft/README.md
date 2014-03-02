@@ -46,7 +46,7 @@ go test
 
 Help
 ----
-[Paper on Raft] helped a lot understanding the topic . My classmate [Vibhor] helped whenever I got stuck while coding. Moreover [goRaft] also helped a lot in implementing the Raft.
+[Paper on Raft] recommended by prof. Sriram helped a lot understanding the topic . My classmate [Vibhor] helped whenever I got stuck while coding , moreover [goRaft] gave a fair idea of Raft-implementation.
 
 
 License
