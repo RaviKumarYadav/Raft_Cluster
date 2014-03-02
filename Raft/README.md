@@ -44,11 +44,19 @@ cd ../github.com/RaviKumarYadav/Raft_Cluster
 go test
 ```
 
+Help
+----
+[Paper on Raft] helped a lot understanding the topic . My classmate [Vibhor] helped whenever I got stuck in code. Moreover [goRaft] also helped a lot in implementing the Raft.
+
+
 License
 ----
 
-[IIT Bombay]
+IIT Bombay
 
+[Paper on Raft]:https://speakerd.s3.amazonaws.com/presentations/7556a1b003d80131e2b062034c419aee/Raft.pdf
+[Vibhor]:https://www.facebook.com/vibhor1403?fref=ts
+[goRaft]:https://github.com/goraft/raft
 [IIT Bombay]:http://www.cse.iitb.ac.in/
 
     
