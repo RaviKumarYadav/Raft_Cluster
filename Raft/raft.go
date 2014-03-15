@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	cluster "github.com/RaviKumarYadav/Raft/cluster"
+	zmq "github.com/pebbe/zmq4"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -41,11 +43,62 @@ type Machine struct {
 	term             int
 	election_timeout time.Duration
 	// Leader,Follower,Candidate
-	state           int
+	state int
+	// machine_channel can be used to pass Stop-Signal to stop the machine
 	machine_channel chan int
 	voted           bool
 	leaderId        int
 }
+
+type Testerstruct struct {
+	SendSocket *zmq.Socket
+	RecvSocket *zmq.Socket
+}
+
+func (t *Testerstruct) TesterInit(m *Machine, testerPort string) {
+
+	ownPort := (strings.Split(m.server.ServerAddress(), ":"))[2]
+	receivePort, _ := strconv.Atoi(ownPort)
+	strRecvPort := strconv.Itoa(receivePort + 1)
+	//fmt.Println("OwnPort :- ",receivePort+1)
+
+	// Receive Port is initialized
+	t.RecvSocket, _ = zmq.NewSocket(zmq.PULL)
+	t.RecvSocket.Bind("tcp://*:" + strRecvPort)
+
+	// Send Port is initialized
+	t.SendSocket, _ = zmq.NewSocket(zmq.PUSH)
+	t.SendSocket.Connect("tcp://localhost:" + testerPort)
+}
+
+func (t *Testerstruct) TesterRecv(m *Machine) {
+
+	for {
+		msg_recv, _ := t.RecvSocket.Recv(0)
+		t.TesterSend(m, msg_recv)
+	}
+
+}
+
+func (t *Testerstruct) TesterSend(m *Machine, recv_msg string) {
+	//msg_seq:IsLeader:LeaderId:SelfId
+	// msg --> msg_seq_no. only
+	msg := recv_msg
+
+	if m.IsLeader() == true {
+		msg += ":1"
+	} else if m.IsLeader() == false {
+		msg += ":0"
+	}
+
+	msg += ":" + strconv.Itoa(m.leaderId)
+	msg += ":" + strconv.Itoa(m.server.Pid())
+	//msg += ":"+strconv.Itoa(m.State())
+
+	t.SendSocket.Send(msg, zmq.DONTWAIT)
+}
+
+//****************************Tester Methods****************************************
 
 func (m Machine) IsLeader() bool {
 
@@ -84,12 +137,15 @@ func (m Machine) readData(myServerId int, serverStateFile string) int {
 	file, e := ioutil.ReadFile("./" + serverStateFile)
 
 	if e != nil {
-		fmt.Printf("File error: %v\n", e)
+		fmt.Printf("Raft File error: %v\n", e)
 		os.Exit(1)
 	}
 
 	var jsonobject jsontype
 	json.Unmarshal(file, &jsonobject)
+
+	//fmt.Println("Complete ServerState File :- ",jsonobject)
+	//fmt.Println("My Server ID :- ",myServerId)
 
 	for _, value := range jsonobject.ServerState {
 		if myServerId == value.Server_Id {
@@ -104,7 +160,7 @@ func (m Machine) readData(myServerId int, serverStateFile string) int {
 }
 
 func NewMachine(myServerId int, serverStateFile string, configFile string, minTimeout int, maxTimeout int) Machine {
-
+	//fmt.Println("In New Machine and ServerId :- ",myServerId)
 	machine := Machine{}
 
 	tempTerm := machine.readData(myServerId, serverStateFile)
@@ -115,8 +171,14 @@ func NewMachine(myServerId int, serverStateFile string, configFile string, minTi
 	}
 
 	machine.server = cluster.NewServer(myServerId, configFile)
+	//fmt.Println("Config File Path -> ",configFile)
 	machine.term = tempTerm
-	machine.election_timeout = time.Duration(minTimeout+rand.Intn(maxTimeout-minTimeout)) * time.Second
+
+	// Random no generation based SEED which is their own ServerId 
+	seed := rand.NewSource(int64(2*myServerId - 1))
+	r1 := rand.New(seed)
+	machine.election_timeout = time.Duration(minTimeout+r1.Intn(maxTimeout-minTimeout)) * time.Millisecond
+
 	machine.state = Follower
 	machine.voted = false
 	machine.machine_channel = make(chan int)
@@ -334,6 +396,7 @@ func candidateLoop(m *Machine) {
 	voteCount := 1
 	m.voted = true
 	m.term = m.term + 1
+	m.leaderId = 0
 
 	// RequestVote Message to all other Servers in cluster
 	reqVote := &cluster.Envelope{}
@@ -372,6 +435,7 @@ func candidateLoop(m *Machine) {
 
 				if GotMajority {
 					m.state = Leader
+					m.leaderId = m.server.Pid()
 					return
 				}
 
@@ -387,6 +451,7 @@ func candidateLoop(m *Machine) {
 		case <-ticker.C:
 			fmt.Println("\nTimeout occurred in Candidate Server", m.server.Pid())
 			m.state = Candidate
+			m.leaderId = 0
 			// It has to return after becoming a Candidate ,
 			// so that few steps like 'increment of Term' , 'setting Timeout' could happen
 			return
@@ -573,6 +638,7 @@ func followerLoop(m *Machine) {
 		case <-tickerFollower.C:
 			fmt.Println("\nTimeout occurred in Server", m.server.Pid())
 			m.state = Candidate
+			m.leaderId = 0
 
 		}
 
@@ -681,6 +747,7 @@ func FollowerToRequestVoteRequest(msg *cluster.Envelope, m *Machine) (int, bool)
 
 			// change state to follower
 			m.state = Follower
+			m.leaderId = 0
 
 			m.server.Outbox() <- replyMsg
 			m.voted = true
@@ -705,6 +772,7 @@ func FollowerToRequestVoteRequest(msg *cluster.Envelope, m *Machine) (int, bool)
 		m.term = msg.Term
 		// change state to follower
 		m.state = Follower
+		m.leaderId = 0
 
 		m.server.Outbox() <- replyMsg
 		m.voted = true
@@ -718,17 +786,30 @@ func FollowerToRequestVoteRequest(msg *cluster.Envelope, m *Machine) (int, bool)
 
 func main() {
 
-	fmt.Println("Starting Main.\n")
-
 	myServerId, _ := strconv.Atoi(os.Args[1])
+	serverStateFile := os.Args[2]
+	configFile := os.Args[3]
+	minTimeOut, _ := strconv.Atoi(os.Args[4])
+	maxTimeOut, _ := strconv.Atoi(os.Args[5])
 
-	machine := NewMachine(myServerId, "serverState.json", "config.json", 10, 12)
+	fmt.Println("Starting Main", myServerId)
 
-	fmt.Println("\nServer Part of Machine is Initialized")
+	machine := NewMachine(myServerId, serverStateFile, configFile, minTimeOut, maxTimeOut)
 
-	fmt.Println("\nStarting Receive Routine...")
+	//***********For Tester Purpose Only***********
+	testerPort := os.Args[6]
+
+	var t Testerstruct
+
+	t.TesterInit(&machine, testerPort)
+	go t.TesterRecv(&machine)
+	//*********Tester Methods Closed***************
+
+	//fmt.Println("\nServer Part of Machine is Initialized")
+
+	//fmt.Println("\nStarting Receive Routine...")
 	go cluster.ReceiveMessage(&machine.server)
-	fmt.Println("\nStarting Send Routine...")
+	//fmt.Println("\nStarting Send Routine...")
 	go cluster.SendMessage(&machine.server)
 
 	fmt.Println("\nElection TimeOut", machine.Election_Timeout())
