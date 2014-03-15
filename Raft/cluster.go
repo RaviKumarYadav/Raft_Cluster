@@ -8,7 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
+	//"time"
 )
 
 type jsonobject struct {
@@ -95,6 +95,10 @@ func (s Server) Inbox() chan *Envelope {
 	return s.inbox
 }
 
+func (s Server) ServerAddress() string {
+	return s.serverAddress
+}
+
 type Server struct {
 	serverID int
 
@@ -116,7 +120,7 @@ func NewServer(myId int, configFile string) Server {
 	file, e := ioutil.ReadFile("./" + configFile)
 
 	if e != nil {
-		fmt.Printf("File error: %v\n", e)
+		fmt.Printf("Cluster File error: %v\n", e)
 		os.Exit(1)
 	}
 
@@ -190,7 +194,7 @@ func SendMessage(server *Server) {
 		}
 	}
 
-	time.Sleep(time.Second * 9)
+	//time.Sleep(time.Second * 9)
 }
 
 func ReceiveMessage(server *Server) {
