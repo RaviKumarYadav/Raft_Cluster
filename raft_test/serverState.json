@@ -1,0 +1,9 @@
+{"ServerState":
+	[
+		{"Server_Id": 1	,	"Term": 0} ,
+		{"Server_Id": 2	,	"Term": 0} ,
+		{"Server_Id": 3	,	"Term": 0} ,
+		{"Server_Id": 4	,	"Term": 0} ,
+		{"Server_Id": 5	,	"Term": 0} 
+	]
+}
