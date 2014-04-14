@@ -29,7 +29,6 @@ go test
 
 How it works
 -------------
-```sh
 
  > Cluster is a group of different Servers working and communicating with each other to form a larger system that will later be used for implementing distributed system.
 
@@ -54,7 +53,6 @@ How it works
     - Voting Status of the Server for the said term.
 
 
-```
 To run individually just pass "ServerId" as command line argument eg :- go run mainFile.go 1 , where "1" is the ServerId whose other details are present in configFile which will be fetched by the program.
 
 
