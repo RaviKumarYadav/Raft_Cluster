@@ -31,9 +31,9 @@ How it works
 -------------
 ```sh
 
-- Cluster is a group of different Servers working and communicating with each other to form a larger system that will later be used for implementing distributed system.
+ > Cluster is a group of different Servers working and communicating with each other to form a larger system that will later be used for implementing distributed system.
 
-- Server uses Messages to communicate with each other . Each server is assigned a unique ServerId which helps in identifying any Server in the System/Cluster.
+ > Server uses Messages to communicate with each other . Each server is assigned a unique ServerId which helps in identifying any Server in the System/Cluster.
 
 - Message being exchanged also have a structure which contains :-
  * MessageId
