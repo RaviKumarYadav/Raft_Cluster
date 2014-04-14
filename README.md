@@ -30,7 +30,29 @@ go test
 How it works
 -------------
 ```sh
-Check the configFile as it should be present with same folder of the cluster_test.go file. 
+
+- Cluster is a group of different Servers working and communicating with each other to form a larger system that will later be used for implementing distributed system.
+
+- Server uses Messages to communicate with each other . Each server is assigned a unique ServerId which helps in identifying any Server in the System/Cluster.
+
+- Message being exchanged also have a structure which contains :-
+ * MessageId
+    -   Its unique for each Message.
+ * Pid
+    -   It reflects the target server or the recipient server for the message.
+ * MsgType
+    -   Messages can be of different types like :- 
+        - AppendEntriesRequest
+        - AppendEntriesResponse
+	    - RequestVoteRequest
+	    - RequestVoteResponse
+ * SenderId
+    - ServerId of the sending server.
+ * Term
+    - Term of the Server sending the message.
+ * Voted
+    - Voting Status of the Server for the said term.
+
 
 ```
 To run individually just pass "ServerId" as command line argument eg :- go run mainFile.go 1 , where "1" is the ServerId whose other details are present in configFile which will be fetched by the program.
