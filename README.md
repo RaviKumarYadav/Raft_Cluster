@@ -1,5 +1,5 @@
-Raft
-=====
+CLUSTER
+=======
 
 cluster.go
 ----------
