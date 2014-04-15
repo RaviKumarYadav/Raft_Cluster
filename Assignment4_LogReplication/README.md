@@ -21,14 +21,12 @@ raft.go implements the Server logic and how it should behave if its in different
 
 RAFT has following parts :-
   - Leader Election
-    ```
     - A Server is elected as a Leader if it has the majority i.e. Votes greater than half of the total number of servers in cluster.
-    ```
+ 
   - Log Replication
-  ```
-    - This part is responsible for the consistency of data i.e. Data at Leader must also be reflected or simply stored on atleast half of the total servers in cluster.
-  ```
-  
+     - This part is responsible for the consistency of data i.e. Data at Leader must also be reflected or simply stored on atleast half of the total servers in cluster.
+ 
+
 Installation
 --------------
 
