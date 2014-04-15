@@ -1,0 +1,7 @@
+{"Server":
+		[
+			{"Server_Id": 1	,	"Port_Num": 10000} ,
+			{"Server_Id": 2	,	"Port_Num": 20000} ,
+			{"Server_Id": 3	,	"Port_Num": 30000}
+		]
+}
