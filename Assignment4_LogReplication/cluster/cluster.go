@@ -140,7 +140,7 @@ type Server struct {
 }
 
 /***********************************************************************
-	Creates a new instance of Server based on ServerId passed 
+	Creates a new instance of Server based on ServerId passed
 	and its corresponding information stored in Config.json file
 ************************************************************************/
 func NewServer(myId int, configFile string) Server {
