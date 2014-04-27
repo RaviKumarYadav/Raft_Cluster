@@ -6,6 +6,8 @@ import (
 	"fmt"
 	cluster "github.com/RaviKumarYadav/Raft/cluster"
 	zmq "github.com/pebbe/zmq4"
+	leveldb "github.com/syndtr/goleveldb/leveldb"
+	//converter "menteslibres.net/gosexy/to"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -56,7 +58,6 @@ func (t *Testerstruct) TesterInit(m *Machine, testerPort string) {
 }
 
 func (t *Testerstruct) TesterRecv(m *Machine) {
-
 	for {
 		msg_recv, _ := t.RecvSocket.Recv(0)
 		t.TesterSend(m, msg_recv)
@@ -65,20 +66,45 @@ func (t *Testerstruct) TesterRecv(m *Machine) {
 }
 
 func (t *Testerstruct) TesterSend(m *Machine, recv_msg string) {
-	//msg_seq:IsLeader:LeaderId:SelfId
-	// msg --> msg_seq_no. only
-	msg := recv_msg
+	// Here We will receive request which will be commands like
+	// Get , Put , Delete Requests from "Tester Program" which will be acting as Client .
+	// So We have to Log commands accordingly and If the request reaches "Non-Leader" node then
+	// it should reply back with "Leader Id" and "Error" status.
 
-	if m.IsLeader() == true {
-		msg += ":1"
-	} else if m.IsLeader() == false {
-		msg += ":0"
+	// Check for the Request , If its Put/Delete then pass it to other Server for Majority (i.e. Catered only by Leader)
+	// Elseif its Get then reply asap irrespective of current state (Leader/Follower)
+
+	recv_msg = strings.ToLower(recv_msg)
+	command := strings.Split(recv_msg, " ")
+
+	if (command[0] == "put" || command[0] == "delete") && m.IsLeader() == true {
+
+		m.StartRaftInbox(recv_msg)
+
+		reply := <-m.Client_channel
+
+		t.SendSocket.Send(reply+":"+command[1], zmq.DONTWAIT)
+
+	} else if (command[0] == "put" || command[0] == "delete") && m.IsLeader() == false {
+
+		t.SendSocket.Send("Failure:"+strconv.Itoa(m.leaderId), zmq.DONTWAIT)
+
+	} else if command[0] == "get" {
+
+		// Reply from here only
+		response, _ := m.DataKVStore.Get([]byte(command[1]), nil)
+		t.SendSocket.Send("Success:"+command[1]+":"+string(response), zmq.DONTWAIT)
+
+	} else if command[0] == "leaderid" {
+
+		if m.IsLeader() == true {
+			t.SendSocket.Send("Success:"+strconv.Itoa(m.leaderId), zmq.DONTWAIT)
+		} else {
+			t.SendSocket.Send("Failure:"+strconv.Itoa(m.leaderId), zmq.DONTWAIT)
+		}
+
 	}
 
-	msg += ":" + strconv.Itoa(m.leaderId)
-	msg += ":" + strconv.Itoa(m.server.Pid())
-
-	t.SendSocket.Send(msg, zmq.DONTWAIT)
 }
 
 /**************************************************
@@ -148,25 +174,24 @@ func (m Machine) readData(myServerId int, serverStateFile string) int {
 }
 
 /*****************************************************************************************************
-	Creates a new instance of Machine ( It contains Server instance) based on ServerId passed 
+	Creates a new instance of Machine ( It contains Server instance) based on ServerId passed
 	and its corresponding information stored in Config.json , ServerStateFile file
 *****************************************************************************************************/
 func NewMachine(myServerId int, serverStateFile string, configFile string, minTimeout int, maxTimeout int) Machine {
 
 	machine := Machine{}
 
-	tempTerm := machine.readData(myServerId, serverStateFile)
-
+	/*tempTerm := machine.readData(myServerId, serverStateFile)
 	if tempTerm == -1 {
 		fmt.Println("Error!!! Term is '-1'. ")
 		//return
 	}
+	machine.term = tempTerm
+	*/
 
 	machine.server = cluster.NewServer(myServerId, configFile)
 
-	machine.term = tempTerm
-
-	// Random no. generation based SEED which is their own ServerId 
+	// Random no. generation based SEED which is their own ServerId
 	seed := rand.NewSource(int64(2*myServerId - 1))
 	r1 := rand.New(seed)
 	machine.election_timeout = time.Duration(minTimeout+r1.Intn(maxTimeout-minTimeout)) * time.Millisecond
@@ -314,7 +339,7 @@ func leaderLoop(m *Machine) {
 func LeaderToAppendEntriesRequest(msg *cluster.Envelope, m *Machine) (int, bool) {
 
 	if m.server.Pid() == msg.SenderId {
-		// My own AE_Request , "How foolish I am ?" :) 
+		// My own AE_Request , "How foolish I am ?" :)
 		// Neglect this.
 	}
 
@@ -473,6 +498,49 @@ func LeaderToRequestVoteRequest(msg *cluster.Envelope, m *Machine) (int, bool) {
 *********************************************************************/
 func LeaderToAppendEntriesResponse(msg *cluster.Envelope, m *Machine) {
 
+	if m.LastApplied < m.CommitIndex {
+
+		// Logic to add the logEntries to LogKVStore and persist DataKVStore also
+		// till new CommitIndex from old CommitIndex
+
+		for index := m.LastApplied + 1; index <= m.CommitIndex; index++ {
+			str := strings.Split(m.Log[index].Data.(string), " ")
+
+			if str[0] == "put" {
+
+				// Key is "Index" coverted to String and then Bytes
+				// Value is "<Term>:<Command>"
+
+				keyBytes := []byte(strconv.Itoa(int(index)))
+				valueBytes := []byte(strconv.Itoa(m.Log[index].Term) + ":" + m.Log[index].Data.(string))
+
+				m.LogKVStore.Put(keyBytes, valueBytes, nil)
+				m.DataKVStore.Put([]byte(str[1]), []byte(str[2]), nil)
+				m.LastApplied += 1
+
+				fmt.Println("Stored PUT for key : ", string(keyBytes), " , value : ", string(valueBytes))
+			} else if str[0] == "delete" {
+
+				// Key is "Index" coverted to String and then Bytes
+				// Value is "<Term>:<Command>"
+
+				keyBytes := []byte(strconv.Itoa(int(index)))
+				valueBytes := []byte(strconv.Itoa(m.Log[index].Term) + ":" + m.Log[index].Data.(string))
+
+				m.LogKVStore.Put(keyBytes, valueBytes, nil)
+
+				m.DataKVStore.Delete([]byte(str[1]), nil)
+
+				m.LastApplied += 1
+
+				fmt.Println("Deleted for key : ", string(keyBytes))
+			} else {
+				fmt.Println("Command Not Leagal : ", str[0])
+			}
+		}
+
+	}
+
 	res := msg.Msg.(cluster.AppendEntriesResponseStruct)
 
 	fmt.Println("\nReceived HeartBeat Response from Server", msg.SenderId, " as :- ", res)
@@ -526,9 +594,13 @@ func LeaderToAppendEntriesResponse(msg *cluster.Envelope, m *Machine) {
 	for _, key := range indices {
 
 		if commitIndexToFreq[key] >= (len(m.server.Peers())/2+1) && key > m.CommitIndex {
-			m.CommitIndex = key
+
 			fmt.Println("Commit Index :- ", m.CommitIndex)
+			m.CommitIndex = key
+			m.Client_channel <- "Success"
+
 			break
+
 		} else if key < m.CommitIndex {
 			break
 		}
@@ -895,6 +967,8 @@ func FollowerToAppendEntriesRequest(msg *cluster.Envelope, m *Machine) (int, boo
 		} else if m.LastLogIndex >= req.PrevLogIndex {
 			fmt.Println("Own Last Index - ", m.LastLogIndex, " , Req Last Index :- ", req.PrevLogIndex)
 			if localLastLogTerm == req.PrevLogTerm {
+				m.leaderId = msg.SenderId
+
 				// Great , Append if any logEntry is sent in message
 				replyMsg := &cluster.Envelope{}
 				replyMsg.Pid = msg.SenderId // Replying to the Sender who sent request
@@ -920,6 +994,46 @@ func FollowerToAppendEntriesRequest(msg *cluster.Envelope, m *Machine) (int, boo
 				fmt.Println("LastLogIndex :- ", m.LastLogIndex, " , Commit Index :- ", m.CommitIndex, " Req.Commit Index :- ", req.LeaderCommit)
 				replyMsg.Msg = cluster.AppendEntriesResponseStruct{Success: true, LastLogEntry: m.LastLogIndex}
 				m.server.Outbox() <- replyMsg
+
+				if m.LastApplied < m.CommitIndex {
+
+					// Logic to add the logEntries to LogKVStore and persist DataKVStore also
+					// till new CommitIndex from old CommitIndex
+
+					for index := m.LastApplied + 1; index <= m.CommitIndex; index++ {
+						str := strings.Split(m.Log[index].Data.(string), " ")
+
+						if str[0] == "put" {
+
+							// Key is "Index" coverted to String and then Bytes
+							// Value is "<Term>:<Command>"
+
+							keyBytes := []byte(strconv.Itoa(int(index)))
+							valueBytes := []byte(strconv.Itoa(m.Log[index].Term) + ":" + m.Log[index].Data.(string))
+
+							m.LogKVStore.Put(keyBytes, valueBytes, nil)
+							m.DataKVStore.Put([]byte(str[1]), []byte(str[2]), nil)
+							m.LastApplied += 1
+
+							fmt.Println("Stored PUT for key : ", string(keyBytes), " , value : ", string(valueBytes))
+						} else if str[0] == "delete" {
+
+							// Key is "Index" coverted to String and then Bytes
+							// Value is "<Term>:<Command>"
+
+							keyBytes := []byte(strconv.Itoa(int(index)))
+							valueBytes := []byte(strconv.Itoa(m.Log[index].Term) + ":" + m.Log[index].Data.(string))
+
+							m.LogKVStore.Put(keyBytes, valueBytes, nil)
+							m.DataKVStore.Delete([]byte(str[1]), nil)
+							m.LastApplied += 1
+
+							fmt.Println("Deleted key : ", string(keyBytes))
+						} else {
+							fmt.Println("Command Not Legal : ", str[0])
+						}
+					}
+				}
 
 			} else if localLastLogTerm != req.PrevLogTerm {
 				// Remove current entry and all succeding entries also
@@ -1041,52 +1155,42 @@ func FollowerToRequestVoteRequest(msg *cluster.Envelope, m *Machine) (int, bool)
 /******************************************************************************************
 	Obtains Request from Client and then Push it on Outbox()
 ******************************************************************************************/
-func (m *Machine) StartRaftInbox() {
+func (m *Machine) StartRaftInbox(command string) {
 
-	time.Sleep(5 * time.Second)
+	if m.IsLeader() == true {
 
-	i := int64(0)
-
-	for {
-
-		if m.IsLeader() == true {
-
-			for _, Sid := range m.server.Peers() {
-				m.NextIndex[Sid] = m.MatchIndex[Sid] + 1
-			}
-
-			entry := cluster.LogEntry{Index: i, Term: m.Term(), Data: strconv.Itoa(int(i)+1) + " Entry"}
-			singleEntry := []cluster.LogEntry{entry}
-			m.Log = append(m.Log, singleEntry...)
-			m.LastLogIndex = int64(len(m.Log)) - 1
-			fmt.Println("Entry no :- ", i, " Log Index :- ", m.LastLogIndex)
-
-			for _, Sid := range m.server.Peers() {
-				msg := &cluster.Envelope{}
-				msg.Pid = Sid
-				msg.MsgType = cluster.AppendEntriesRequest
-				msg.SenderId = m.server.Pid()
-				msg.Term = m.Term()
-
-				lastTerm := 0
-
-				if m.MatchIndex[Sid] != -1 {
-					lastTerm = m.Log[m.MatchIndex[Sid]].Term
-				}
-
-				msg.Msg = cluster.AppendEntriesRequestStruct{PrevLogIndex: m.MatchIndex[Sid], PrevLogTerm: lastTerm, Entries: m.Log[m.NextIndex[Sid] : m.LastLogIndex+1], LeaderCommit: m.CommitIndex}
-
-				m.server.Outbox() <- msg
-				fmt.Println("Raft Inbox :- ", msg.Msg)
-			}
-
-			time.Sleep(2 * time.Second)
-			i = i + 1
-		} else {
-			// Reply back with proper Leader details
-			time.Sleep(2 * time.Second)
-
+		for _, Sid := range m.server.Peers() {
+			m.NextIndex[Sid] = m.MatchIndex[Sid] + 1
 		}
+
+		entry := cluster.LogEntry{Index: int64(len(m.Log)), Term: m.Term(), Data: command}
+		singleEntry := []cluster.LogEntry{entry}
+		m.Log = append(m.Log, singleEntry...)
+		m.LastLogIndex = int64(len(m.Log)) - 1
+		//fmt.Println("Entry no :- ", i, " Log Index :- ", m.LastLogIndex)
+
+		for _, Sid := range m.server.Peers() {
+			msg := &cluster.Envelope{}
+			msg.Pid = Sid
+			msg.MsgType = cluster.AppendEntriesRequest
+			msg.SenderId = m.server.Pid()
+			msg.Term = m.Term()
+
+			lastTerm := 0
+
+			if m.MatchIndex[Sid] != -1 {
+				lastTerm = m.Log[m.MatchIndex[Sid]].Term
+			}
+
+			msg.Msg = cluster.AppendEntriesRequestStruct{PrevLogIndex: m.MatchIndex[Sid], PrevLogTerm: lastTerm, Entries: m.Log[m.NextIndex[Sid] : m.LastLogIndex+1], LeaderCommit: m.CommitIndex}
+
+			m.server.Outbox() <- msg
+			fmt.Println("Raft Inbox :- ", msg.Msg)
+		}
+
+	} else {
+		// Reply back with proper Leader details
+		// Not Leader so do nothing
 	}
 }
 
@@ -1120,19 +1224,84 @@ type Machine struct {
 	election_timeout time.Duration
 	voted            bool
 	leaderId         int
-	state            int      // Leader,Follower,Candidate
-	machine_channel  chan int // machine_channel can be used to pass Stop-Signal to stop the machine
+	state            int         // Leader,Follower,Candidate
+	machine_channel  chan int    // machine_channel can be used to pass Stop-Signal to stop the machine
+	Client_channel   chan string // Channel to respond to client (if Leader then convey the status of last request else convey Leader Id)
 
 	RaftInbox  chan interface{}
 	RaftOutbox chan interface{}
 
-	Log          []cluster.LogEntry
+	Log         []cluster.LogEntry
+	LogKVStore  *leveldb.DB
+	DataKVStore *leveldb.DB
+	//DataStore    map[string]string
 	LastLogIndex int64
 	CommitIndex  int64
 	LastApplied  int64
 	NextIndex    map[int]int64
 	MatchIndex   map[int]int64
 	FollowerTerm map[int]int
+}
+
+/**************************************************
+	LevelDB Methods
+**************************************************/
+
+func (m *Machine) loadDataFromLevelDB() (*leveldb.DB, *leveldb.DB) {
+
+	fmt.Println("Loading Values from KVStores : logKVStore , dataKVStore")
+	fmt.Println("Opening Store : ", "logKVStore"+strconv.Itoa(m.server.Pid()))
+	// Remember that the contents of the returned slice should not be modified.
+	logKVStore, err1 := leveldb.OpenFile("logKVStore"+strconv.Itoa(m.server.Pid()), nil)
+
+	if err1 != nil {
+		fmt.Println("\nError :- ", err1)
+	} else {
+
+		dataKVStore, err2 := leveldb.OpenFile("dataKVStore"+strconv.Itoa(m.server.Pid()), nil)
+		if err2 != nil {
+			fmt.Println("\nError :- ", err2)
+		} else {
+
+			m.LastLogIndex = -1
+			m.CommitIndex = -1
+			m.LastApplied = -1
+
+			logIter := logKVStore.NewIterator(nil, nil)
+
+			for logIter.Next() {
+				// only valid until the next call to Next.
+				key := logIter.Key()
+				value := logIter.Value()
+				//fmt.Println("\nKey : ",key," , Value : ",value)
+
+				logKey, _ := strconv.Atoi(string(key))
+
+				tempvalueKeyPart := strings.Split(string(value), ":")
+				valueKeyPart, _ := strconv.Atoi(tempvalueKeyPart[0])
+
+				logEntryValue := cluster.LogEntry{Index: int64(logKey), Term: valueKeyPart, Data: tempvalueKeyPart[1]}
+
+				m.Log = append(m.Log, logEntryValue)
+
+				m.CommitIndex += 1
+			}
+
+			if m.CommitIndex != -1 {
+				m.LastLogIndex = m.CommitIndex
+				m.LastApplied = m.CommitIndex
+				m.term = m.Log[m.CommitIndex].Term
+			} else {
+				m.term = 0
+			}
+
+			//fmt.Println("Total Log Now : ",m.Log)
+			return logKVStore, dataKVStore
+		}
+
+	}
+
+	return nil, nil
 }
 
 /******************************************************************************************
@@ -1146,27 +1315,31 @@ func main() {
 	gob.Register(cluster.RequestVoteResponseStruct{})
 
 	myServerId, _ := strconv.Atoi(os.Args[1])
-	//serverStateFile := os.Args[2]
-	//configFile := os.Args[3]
-	//minTimeOut, _ := strconv.Atoi(os.Args[4])
-	//maxTimeOut, _ := strconv.Atoi(os.Args[5])
-
-	serverStateFile := "./serverState.json"
-	configFile := "./config.json"
-	minTimeOut := 5000
-	maxTimeOut := 6000
+	serverStateFile := os.Args[2]
+	configFile := os.Args[3]
+	minTimeOut, _ := strconv.Atoi(os.Args[4])
+	maxTimeOut, _ := strconv.Atoi(os.Args[5])
 
 	fmt.Println("Starting Main", myServerId)
 
 	machine := NewMachine(myServerId, serverStateFile, configFile, minTimeOut, maxTimeOut)
 
 	machine.Log = make([]cluster.LogEntry, 0)
-	machine.LastLogIndex = -1
-	machine.CommitIndex = -1
-	machine.LastApplied = -1
 	machine.NextIndex = make(map[int]int64)
 	machine.MatchIndex = make(map[int]int64)
 	machine.FollowerTerm = make(map[int]int)
+	machine.Client_channel = make(chan string)
+
+	machine.LastLogIndex = -1
+	machine.CommitIndex = -1
+	machine.LastApplied = -1
+	machine.LogKVStore, machine.DataKVStore = machine.loadDataFromLevelDB()
+
+	if machine.LogKVStore == nil || machine.DataKVStore == nil {
+
+		fmt.Println("Error in LevelDB files")
+		return
+	}
 
 	for _, Sid := range machine.server.Peers() {
 
@@ -1176,22 +1349,49 @@ func main() {
 	}
 
 	//***********For Tester Purpose Only***********
-	/*testerPort := os.Args[6]
+	testerPort := os.Args[6]
 
 	var t Testerstruct
 
 	t.TesterInit(&machine, testerPort)
+
 	go t.TesterRecv(&machine)
-	*/
+
 	//*********Tester Methods Closed***************
 	go cluster.ReceiveMessage(&machine.server)
 
 	go cluster.SendMessage(&machine.server)
 
-	go machine.StartRaftInbox()
+	//go machine.every5sec()
+
+	//go machine.StartRaftInbox()
 
 	fmt.Println("\nElection TimeOut", machine.Election_Timeout())
 
 	Start(&machine)
+
+}
+
+func (m *Machine) every5sec() {
+
+	for {
+
+		time.Sleep(5 * time.Second)
+
+		iter := m.DataKVStore.NewIterator(nil, nil)
+
+		fmt.Println("\n\n*********************************\n")
+
+		for iter.Next() {
+			// Remember that the contents of the returned slice should not be modified, and
+			// only valid until the next call to Next.
+			key := iter.Key()
+			value := iter.Value()
+			fmt.Println("\nKey : ", string(key), " , Value : ", string(value))
+		}
+
+		fmt.Println("\n\n*********************************\n")
+
+	}
 
 }
